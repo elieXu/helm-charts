@@ -93,14 +93,27 @@ defaultRules:
 
 ## Provide custom recording or alerting rules to be deployed into the cluster.
 ##
-additionalPrometheusRulesMap: {}
-#  rule-name:
-#    groups:
-#    - name: my_group
-#      rules:
-#      - record: my_record
-#        expr: 100 * my_record
-
+additionalPrometheusRulesMap:
+  rule-name: 
+    groups:
+      - name: 'blackbox-exporter.rules'
+        rules:
+        - alert: EC2 jump host port 20095 not accessible
+          expr: (probe_success{instance="152.67.111.205:20095", job="blackbox-foreverxt"}) == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "EC2 jump host (instance {{ $labels.instance }}) is down"
+            description: EC2 jump host port 20095 not working\n VALUE = {{ $value }}\n LABELS = {{ $labels }}
+        - alert: EC2 jump host port 22 not accessible
+          expr: (probe_success{instance="152.67.111.205:22", job="blackbox-foreverxt"}) == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "EC2 jump host (instance {{ $labels.instance }}) is down. Port 22 not accessible"
+            description: EC2 jump host is down\n VALUE = {{ $value }}\n LABELS = {{ $labels }}
 ##
 global:
   rbac:
@@ -195,14 +208,46 @@ alertmanager:
       group_by: ['namespace']
       group_wait: 30s
       group_interval: 5m
-      repeat_interval: 12h
-      receiver: 'null'
+      repeat_interval: 1h
+      receiver: 'default_receiver'
       routes:
+      - match:
+          alertname: 'etcdInsufficientMembers'
+        receiver: 'null'
+      - match:
+          alertname: 'TargetDown'
+        receiver: 'null'
+      - match:
+          alertname: 'Watchdog'
+        receiver: 'null'
+      - match:
+          alertname: 'KubeControllerManagerDown'
+        receiver: 'null'
+      - match:
+          alertname: 'KubeSchedulerDown'
+        receiver: 'null'
+      - match:
+          alertname: 'NodeClockNotSynchronising'
+        receiver: 'null'
       - receiver: 'null'
         matchers:
-          - alertname =~ "InfoInhibitor|Watchdog"
+          - alertname =~ 'InfoInhibitor|Watchdog'
+
     receivers:
     - name: 'null'
+
+    - name: 'default_receiver'
+      email_configs:
+      - to: 'xuzhijun95@126.com'
+        from: 'xuzhijun95@126.com'
+        smarthost: 'smtp.126.com:25'
+        auth_username: 'xuzhijun95@126.com'
+        auth_identity: 'xuzhijun95@126.com'
+        auth_password: 'LEGDXOXWQPJUGSPE'
+        #requires_tls: false
+        send_resolved: true
+        hello: 'foreverxt'
+
     templates:
     - '/etc/alertmanager/config/*.tmpl'
 
@@ -254,9 +299,6 @@ alertmanager:
     annotations: {}
 
     labels: {}
-
-    ## Redirect ingress to an additional defined port on the service
-    # servicePort: 8081
 
     ## Hosts must be provided if Ingress is enabled.
     ##
@@ -352,10 +394,6 @@ alertmanager:
 
     ## Additional ports to open for Alertmanager service
     additionalPorts: []
-    # additionalPorts:
-    # - name: authenticated
-    #   port: 8081
-    #   targetPort: 8081
 
     externalIPs: []
     loadBalancerIP: ""
@@ -474,10 +512,6 @@ alertmanager:
     ## this Alertmanager instance. Defaults to 'alertmanager-' The secret is mounted into /etc/alertmanager/config.
     ##
     # configSecret:
-
-    ## WebTLSConfig defines the TLS parameters for HTTPS
-    ## ref: https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api.md#alertmanagerwebspec
-    web: {}
 
     ## AlertmanagerConfigs to be selected to merge and configure Alertmanager with.
     ##
@@ -642,18 +676,6 @@ alertmanager:
     ## Containers allows injecting additional containers. This is meant to allow adding an authentication proxy to an Alertmanager pod.
     ##
     containers: []
-    # containers:
-    # - name: oauth-proxy
-    #   image: quay.io/oauth2-proxy/oauth2-proxy:v7.1.2
-    #   args:
-    #   - --upstream=http://127.0.0.1:9093
-    #   - --http-address=0.0.0.0:8081
-    #   - ...
-    #   ports:
-    #   - containerPort: 8081
-    #     name: oauth-proxy
-    #     protocol: TCP
-    #   resources: {}
 
     # Additional volumes on the output StatefulSet definition.
     volumes: []
@@ -804,12 +826,6 @@ grafana:
       createPrometheusReplicasDatasources: false
       label: grafana_datasource
       labelValue: "1"
-
-      ## Field with internal link pointing to existing data source in Grafana.
-      ## Can be provisioned via additionalDataSources
-      exemplarTraceIdDestinations: {}
-        # datasourceUid: Jaeger
-        # traceIdLabelName: trace_id
 
   extraConfigmapMounts: []
   # - name: certs-configmap
@@ -1518,7 +1534,7 @@ prometheusOperator:
   ## Prometheus-Operator v0.39.0 and later support TLS natively.
   ##
   tls:
-    enabled: true
+    enabled: false
     # Value must match version names from https://golang.org/pkg/crypto/tls/#pkg-constants
     tlsMinVersion: VersionTLS13
     # The default webhook port is 10250 in order to work out-of-the-box in GKE private clusters and avoid adding firewall rules.
@@ -1528,7 +1544,7 @@ prometheusOperator:
   ## rules from making their way into prometheus and potentially preventing the container from starting
   admissionWebhooks:
     failurePolicy: Fail
-    enabled: true
+    enabled: false
     ## A PEM encoded CA bundle which will be used to validate the webhook's server certificate.
     ## If unspecified, system trust roots on the apiserver are used.
     caBundle: ""
@@ -1642,10 +1658,6 @@ prometheusOperator:
     ## Ref: https://kubernetes.io/docs/user-guide/services/#external-ips
     ##
     externalIPs: []
-
-  ## Annotations to add to the operator deployment
-  ##
-  annotations: {}
 
   ## Labels to add to the operator pod
   ##
@@ -1958,10 +1970,6 @@ prometheus:
 
     ## Additional port to define in the Service
     additionalPorts: []
-    # additionalPorts:
-    # - name: authenticated
-    #   port: 8081
-    #   targetPort: 8081
 
     ## Consider that all endpoints are considered "ready" even if the Pods themselves are not
     ## Ref: https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/#ServiceSpec
@@ -2065,20 +2073,17 @@ prometheus:
 
     # For Kubernetes >= 1.18 you should specify the ingress-controller via the field ingressClassName
     # See https://kubernetes.io/blog/2020/04/02/improvements-to-the-ingress-api-in-kubernetes-1.18/#specifying-the-class-of-an-ingress
-    # ingressClassName: nginx
+    ingressClassName: nginx
 
     annotations: {}
     labels: {}
 
-    ## Redirect ingress to an additional defined port on the service
-    # servicePort: 8081
-
     ## Hostnames.
     ## Must be provided if Ingress is enabled.
     ##
-    # hosts:
-    #   - prometheus.domain.com
-    hosts: []
+    hosts:
+       - prometheus.domain.com
+    #hosts: []
 
     ## Paths to use for ingress rules - one path should match the prometheusSpec.routePrefix
     ##
@@ -2548,7 +2553,51 @@ prometheus:
     ## The scrape configuration example below will find master nodes, provided they have the name .*mst.*, relabel the
     ## port to 2379 and allow etcd scraping provided it is running on all Kubernetes master nodes
     ##
-    additionalScrapeConfigs: []
+    #additionalScrapeConfigs: []
+    additionalScrapeConfigs:  
+      - job_name: 'kubernetes-pods-foreverxt'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+      
+      - job_name: 'blackbox-foreverxt'
+        scrape_interval: 60s
+        metrics_path: /probe
+        params:
+          module: [tcp_connect]
+        static_configs:
+          - targets:
+            - 152.67.111.205:22
+            - 152.67.111.205:20095
+            - 192.168.64.6:22
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: instance
+          - target_label: __address__
+            replacement: prometheus-prometheus-blackbox-exporter:9115 # The blackbox exporter's real hostname:port
+
     # - job_name: kube-etcd
     #   kubernetes_sd_configs:
     #     - role: node
@@ -2679,18 +2728,6 @@ prometheus:
     ## Containers allows injecting additional containers. This is meant to allow adding an authentication proxy to a Prometheus pod.
     ## if using proxy extraContainer update targetPort with proxy container port
     containers: []
-    # containers:
-    # - name: oauth-proxy
-    #   image: quay.io/oauth2-proxy/oauth2-proxy:v7.1.2
-    #   args:
-    #   - --upstream=http://127.0.0.1:9093
-    #   - --http-address=0.0.0.0:8081
-    #   - ...
-    #   ports:
-    #   - containerPort: 8081
-    #     name: oauth-proxy
-    #     protocol: TCP
-    #   resources: {}
 
     ## InitContainers allows injecting additional initContainers. This is meant to allow doing some changes
     ## (permissions, dir tree) on mounted volumes before starting prometheus
@@ -3133,14 +3170,6 @@ thanosRuler:
     ##
     routePrefix: /
 
-    ## ObjectStorageConfig configures object storage in Thanos. Alternative to
-    ## ObjectStorageConfigFile, and lower order priority.
-    objectStorageConfig: {}
-
-    ## ObjectStorageConfigFile specifies the path of the object storage configuration file.
-    ## When used alongside with ObjectStorageConfig, ObjectStorageConfigFile takes precedence.
-    objectStorageConfigFile: ""
-
     ## If set to true all actions on the underlying managed objects are not going to be performed, except for delete actions.
     ##
     paused: false
@@ -3250,3 +3279,6 @@ thanosRuler:
   #   auth: |
   #     foo:$apr1$OFG3Xybp$ckL0FHDAkoXYIlH9.cysT0
   #     someoneelse:$apr1$DMZX2Z4q$6SbQIfyuLQd.xmo/P0m2c.
+
+blackbox: 
+  enabled: true
